@@ -1,5 +1,6 @@
 import argparse
 import sys
+import random as rand
 from time import time
 import multiprocessing
 
@@ -9,9 +10,12 @@ DEPTH = 5
 DONT_SCORE_ONE = True
 
 
-def compute(x):
+def compute(x, player):
     move_sequence, board = x
-    return [x + 1 for x in move_sequence], board.mini_max(DEPTH)
+    if player:
+        return [x + 1 for x in move_sequence], board.mini_max_alpha_beta(DEPTH, not player)
+    else:
+        return [x + 1 for x in move_sequence], -board.mini_max_alpha_beta(DEPTH, not player)
 
 
 class Board:
@@ -147,15 +151,30 @@ class Board:
                     break
             return best_value
 
-    def find_best_move(self, n=1):
+    def find_best_move(self, n=1, player=True):
         print("Calculating best move...")
         t = time()
 
+        params = []
+        for move in list(self.find_all_moves()):
+            params.append((move, player))
+
         def moves():
             with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
-                yield from pool.map(compute, list(self.find_all_moves()))
+                yield from pool.starmap(compute, params)
 
         result = sorted(moves(), key=lambda x: x[1], reverse=True)[:1]
+        print("Calculated in %.1fs" % (time() - t))
+        return result
+
+    def find_random_move(self, n=1, player=True):
+        print("Calculating random move...")
+        t = time()
+
+        random_move = rand.choice(list(self.find_all_moves()))[0]
+        for i in range(len(random_move)):
+            random_move[i] = random_move[i] + 1
+        result = [(random_move, 0)]
         print("Calculated in %.1fs" % (time() - t))
         return result
 
@@ -185,7 +204,13 @@ class Board:
             return self.opponent_points - self.player_points
 
 
-def player_move(board):
+def player_move(board, moves=None):
+    if moves:
+        for move in moves[0]:
+            board.make_player_move(move - 1)
+            board.print()
+        return board
+
     has_move = True
     while has_move:
         command = input('Player move: ').split()
@@ -205,8 +230,15 @@ def player_move(board):
     return board
 
 
-def opponent_move(board):
+def opponent_move(board, moves=None):
     board = board.get_opponent_board()
+
+    if moves:
+        for move in moves[0]:
+            board.make_player_move(move - 1)
+            board.get_opponent_board().print()
+        return board.get_opponent_board()
+
     has_move = True
     while has_move:
         command = input('Opponent move: ').split()
@@ -233,15 +265,19 @@ def run_game(initial_board=None, player_starts=True):
     board.print()
     while 1:
         if player_starts:
-            for best_move in board.find_best_move(5):
+            for best_move in board.find_best_move(5, True):
                 print(best_move)
-            board = player_move(board)
-            board = opponent_move(board)
+            board = player_move(board, best_move)
+            for best_move in board.get_opponent_board().find_random_move(5, False):
+                print(best_move)
+            board = opponent_move(board, best_move)
         else:
-            board = opponent_move(board)
-            for best_move in board.find_best_move(5):
+            for best_move in board.get_opponent_board().find_random_move(5, False):
                 print(best_move)
-            board = player_move(board)
+            board = opponent_move(board, best_move)
+            for best_move in board.find_best_move(5, True):
+                print(best_move)
+            board = player_move(board, best_move)
 
         if board.no_more_moves():
             print("Games ended")
