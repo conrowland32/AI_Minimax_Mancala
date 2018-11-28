@@ -3,19 +3,20 @@ import sys
 import random as rand
 from time import time
 import multiprocessing
-
 from io import StringIO
 
 DEPTH = 5
 DONT_SCORE_ONE = True
+PLAYER_CODE = 0
+OPPONENT_CODE = 0
 
 
 def compute(x, player):
     move_sequence, board = x
     if player:
-        return [x + 1 for x in move_sequence], board.mini_max_alpha_beta(DEPTH, not player)
+        return [x + 1 for x in move_sequence], board.mini_max_alpha_beta(DEPTH, maximizing_player=(not player))
     else:
-        return [x + 1 for x in move_sequence], -board.mini_max_alpha_beta(DEPTH, not player)
+        return [x + 1 for x in move_sequence], -board.mini_max_alpha_beta(DEPTH, maximizing_player=(not player))
 
 
 class Board:
@@ -135,7 +136,7 @@ class Board:
         if maximizing_player:
             best_value = -999
             for move, board in self.get_opponent_board().find_all_moves():
-                best_value = max(best_value, board.mini_max(
+                best_value = max(best_value, board.mini_max_alpha_beta(
                     depth - 1, alpha, beta, not maximizing_player))
                 alpha = max(alpha, best_value)
                 if beta <= alpha:
@@ -144,14 +145,19 @@ class Board:
         else:
             best_value = 999
             for move, board in self.get_opponent_board().find_all_moves():
-                best_value = min(best_value, board.mini_max(
-                    depth - 1, not maximizing_player))
+                best_value = min(best_value, board.mini_max_alpha_beta(
+                    depth - 1, alpha, beta, not maximizing_player))
                 beta = min(beta, best_value)
                 if beta <= alpha:
                     break
             return best_value
 
     def find_best_move(self, n=1, player=True):
+        if player and PLAYER_CODE == "000000":
+            return self.find_random_move(n, player)
+        if not player and OPPONENT_CODE == "000000":
+            return self.find_random_move(n, player)
+
         print("Calculating best move...")
         t = time()
 
@@ -198,10 +204,13 @@ class Board:
         return result.getvalue()
 
     def get_heurestic_score(self):
+        # Player turn
         if not self.reversed:
             return self.player_points - self.opponent_points
+        # Opponent turn
         else:
             return self.opponent_points - self.player_points
+
 
 
 def player_move(board, moves=None):
@@ -263,25 +272,37 @@ def run_game(initial_board=None, player_starts=True):
         board.board = initial_board
 
     board.print()
+
     while 1:
+        if board.no_more_moves():
+            player_side = board.board[1:8]
+            opponent_side = board.board[8:] + board.board[:1]
+            if sum(player_side) < sum(opponent_side):
+                print("Game over  -  Opponent wins", sum(opponent_side), "-", sum(player_side))
+            elif sum(player_side) > sum(opponent_side):
+                print("Game over  -  Player wins", sum(player_side), "-", sum(opponent_side))
+            else:
+                print("Game over  -  Draw", sum(player_side), "-", sum(opponent_side))
+            break
+
         if player_starts:
             for best_move in board.find_best_move(5, True):
                 print(best_move)
             board = player_move(board, best_move)
-            for best_move in board.get_opponent_board().find_random_move(5, False):
+            if board.no_more_moves():
+                continue
+            for best_move in board.get_opponent_board().find_best_move(5, False):
                 print(best_move)
             board = opponent_move(board, best_move)
         else:
-            for best_move in board.get_opponent_board().find_random_move(5, False):
+            for best_move in board.get_opponent_board().find_best_move(5, False):
                 print(best_move)
             board = opponent_move(board, best_move)
+            if board.no_more_moves():
+                continue
             for best_move in board.find_best_move(5, True):
                 print(best_move)
             board = player_move(board, best_move)
-
-        if board.no_more_moves():
-            print("Games ended")
-            break
 
 
 if __name__ == '__main__':
@@ -291,8 +312,12 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--opponent-starts',
                         default=False, action="store_true")
     parser.add_argument('--dont-score-one', default=False, action="store_true")
+    parser.add_argument('-p', '--player-code', default="100000")
+    parser.add_argument('-e', '--opponent-code', default="100000")
     args = parser.parse_args()
 
     DEPTH = args.depth
     DONT_SCORE_ONE = args.dont_score_one
+    PLAYER_CODE = args.player_code
+    OPPONENT_CODE = args.opponent_code
     run_game(args.board, not args.opponent_starts)
